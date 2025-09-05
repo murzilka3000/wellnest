@@ -24,7 +24,6 @@ const HabitItem = ({
   onDelete: (habitId: string) => void;
   onSelect: (habitId: string) => void;
 }) => (
-  // ... (JSX для HabitItem остается без изменений)
   <li className={styles.item}>
     <input
       type="checkbox"

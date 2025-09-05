@@ -6,13 +6,20 @@ import { HabitEntity } from './habit.entity';
 import { HabitLogEntity } from './habit-log.entity';
 import { subDays, isSameDay } from 'date-fns';
 
+interface StreakData {
+  currentStreak: number;
+  longestStreak: number;
+}
+
 @Injectable()
 export class HabitsService {
   constructor(
     @InjectRepository(HabitEntity)
     private readonly habitRepository: Repository<HabitEntity>,
+    // --- ИСПРАВЛЕНИЕ ОШИБКИ: Правильный тип для habitLogRepository ---
     @InjectRepository(HabitLogEntity)
     private readonly habitLogRepository: Repository<HabitLogEntity>,
+    // --- КОНЕЦ ИСПРАВЛЕНИЯ ---
   ) {}
 
   async findAllByUser(userId: string) {
@@ -23,29 +30,29 @@ export class HabitsService {
 
     const habitsWithStatus = await Promise.all(
       habits.map(async (habit) => {
-        const logs = await this.habitLogRepository.find({
+        // Получаем ВСЕ логи для этой привычки, отсортированные по дате (от новой к старой)
+        const allLogsAsc = await this.habitLogRepository.find({
           where: { habit: { id: habit.id } },
-          order: { date: 'DESC' },
+          order: { date: 'ASC' },
         });
+        const logsDesc = [...allLogsAsc].reverse(); // Копируем и переворачиваем для `isCompletedToday`
 
         const today = new Date();
         const isCompletedToday =
-          logs.length > 0 && isSameDay(new Date(logs[0].date), today);
+          logsDesc.length > 0 && isSameDay(new Date(logsDesc[0].date), today);
 
-        // --- ИЗМЕНЕНИЕ: Используем наш новый приватный метод ---
-        const streak = this.calculateStreak(logs);
+        const { currentStreak } = this.calculateStreaks(allLogsAsc, today);
 
         return {
           ...habit,
           isCompletedToday,
-          streak,
+          streak: currentStreak,
         };
       }),
     );
     return habitsWithStatus;
   }
 
-  // ... (методы create, remove, logHabit, unlogHabit остаются без изменений) ...
   async create(title: string, userId: string): Promise<HabitEntity> {
     const newHabit = this.habitRepository.create({
       title,
@@ -103,9 +110,7 @@ export class HabitsService {
     });
   }
 
-  // --- НАЧАЛО ИЗМЕНЕНИЙ: НОВЫЙ МЕТОД ДЛЯ СТАТИСТИКИ ---
   async getStats(habitId: string, userId: string) {
-    // 1. Убеждаемся, что привычка существует и принадлежит пользователю
     const habit = await this.habitRepository.findOneBy({
       id: habitId,
       user: { id: userId },
@@ -116,20 +121,19 @@ export class HabitsService {
       );
     }
 
-    // 2. Получаем все логи для этой привычки
-    const logs = await this.habitLogRepository.find({
+    const logsAsc = await this.habitLogRepository.find({
       where: { habit: { id: habitId } },
-      order: { date: 'DESC' },
+      order: { date: 'ASC' },
     });
 
-    // 3. Считаем статистику
-    const currentStreak = this.calculateStreak(logs);
-    const totalCompletions = logs.length;
-    // Просто возвращаем массив дат в формате 'YYYY-MM-DD' для отрисовки календаря
-    const completionHistory = logs.map((log) => log.date);
+    const today = new Date();
+    const { currentStreak, longestStreak } = this.calculateStreaks(
+      logsAsc,
+      today,
+    );
 
-    // TODO: В будущем здесь будет логика подсчета самого длинного стрика
-    const longestStreak = currentStreak; // Пока для простоты используем текущий
+    const totalCompletions = logsAsc.length;
+    const completionHistory = logsAsc.map((log) => log.date);
 
     return {
       habitTitle: habit.title,
@@ -139,41 +143,76 @@ export class HabitsService {
       completionHistory,
     };
   }
-  // --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
-  // --- НАЧАЛО ИЗМЕНЕНИЙ: Рефакторинг логики стрика в отдельный метод ---
-  private calculateStreak(logs: HabitLogEntity[]): number {
+  private calculateStreaks(logs: HabitLogEntity[], today: Date): StreakData {
     if (logs.length === 0) {
-      return 0;
+      return { currentStreak: 0, longestStreak: 0 };
     }
 
-    const today = new Date();
-    const latestLogDate = new Date(logs[0].date);
+    const sortedLogDates = logs.map((log) => new Date(log.date));
 
-    // Если последняя запись не сегодня и не вчера, то стрик точно прерван.
-    if (
-      !isSameDay(latestLogDate, today) &&
-      !isSameDay(latestLogDate, subDays(today, 1))
-    ) {
-      return 0;
-    }
+    let currentStreak = 0;
+    let longestStreak = 0;
 
-    let currentStreak = 1;
-    // Проверяем остальные дни
-    for (let i = 1; i < logs.length; i++) {
-      const currentLogDate = new Date(logs[i - 1].date);
-      const previousLogDate = new Date(logs[i].date);
-      const expectedPreviousDate = subDays(currentLogDate, 1);
+    // Для удобства работы с датами и поиска
+    const logDatesSet = new Set(
+      sortedLogDates.map((d) => d.toISOString().split('T')[0]),
+    );
 
-      if (isSameDay(previousLogDate, expectedPreviousDate)) {
-        currentStreak++;
-      } else {
-        // Нашли "дырку" в последовательности, серия прервалась.
-        break;
+    // --- Подсчет текущего стрика (currentStreak) ---
+    // Идем назад от сегодня, пока не найдем пропуск
+    let tempCheckDate = new Date(today);
+    let tempCurrentStreak = 0;
+
+    // Проверяем, есть ли запись за сегодня
+    if (logDatesSet.has(tempCheckDate.toISOString().split('T')[0])) {
+      tempCurrentStreak = 1;
+      tempCheckDate = subDays(tempCheckDate, 1);
+      // Идем назад, пока есть логи
+      while (logDatesSet.has(tempCheckDate.toISOString().split('T')[0])) {
+        tempCurrentStreak++;
+        tempCheckDate = subDays(tempCheckDate, 1);
+      }
+    } else {
+      // Если сегодня не выполнено, проверяем вчера
+      tempCheckDate = subDays(today, 1);
+      if (logDatesSet.has(tempCheckDate.toISOString().split('T')[0])) {
+        // Если вчера выполнено, то текущий стрик с сегодня = 0.
+        // Для UI можно добавить логику "был стрик до вчерашнего дня".
       }
     }
+    currentStreak = tempCurrentStreak;
 
-    return currentStreak;
+    // --- Подсчет самого длинного стрика (longestStreak) ---
+    // Идем по логам вперед (по возрастанию дат)
+    let tempStreak = 0;
+    let lastLogDate: Date | null = null;
+
+    // Получаем уникальные и отсортированные даты из логов для Longest Streak
+    const uniqueSortedLogDates = [...new Set(logs.map((log) => log.date))]
+      .map((dateStr) => new Date(dateStr))
+      .sort((a, b) => a.getTime() - b.getTime());
+
+    for (const logDate of uniqueSortedLogDates) {
+      if (lastLogDate === null) {
+        tempStreak = 1;
+      } else if (isSameDay(logDate, subDays(lastLogDate, -1))) {
+        // Проверяем, что это следующий день
+        tempStreak++;
+      } else {
+        tempStreak = 1; // Серия прервалась, начинаем новую
+      }
+      if (tempStreak > longestStreak) {
+        longestStreak = tempStreak;
+      }
+      lastLogDate = logDate;
+    }
+
+    // Последний tempStreak может быть самым длинным, если серия еще продолжается
+    if (tempStreak > longestStreak) {
+      longestStreak = tempStreak;
+    }
+
+    return { currentStreak, longestStreak };
   }
-  // --- КОНЕЦ ИЗМЕНЕНИЙ ---
 }
