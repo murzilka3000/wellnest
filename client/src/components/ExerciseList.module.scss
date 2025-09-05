@@ -1,0 +1,81 @@
+.exerciseListContainer {
+  margin-top: 2rem;
+  padding: 1rem;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  background-color: #fff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #eee;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.info {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+}
+
+.name {
+  font-weight: bold;
+  color: #333;
+}
+
+.details {
+  font-size: 0.85rem;
+  color: #777;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.muscleGroup {
+  background-color: #e0f7fa;
+  color: #00796b;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+}
+
+.actions {
+  display: flex;
+  gap: 5px;
+}
+
+.editButton,
+.deleteButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 5px;
+  color: #555;
+
+  &:hover {
+    color: #000;
+  }
+}
+
+.deleteButton {
+  color: red;
+  &:hover {
+    color: darkred;
+  }
+}
