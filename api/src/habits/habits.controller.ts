@@ -1,21 +1,29 @@
-// api/src/habits/habits.controller.ts
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { HabitsService } from './habits.service';
 
-// DTO для валидации данных при создании привычки
 class CreateHabitDto {
   title: string;
 }
 
-@UseGuards(AuthGuard) // <-- ЗАЩИЩАЕМ ВЕСЬ КОНТРОЛЛЕР СРАЗУ
+@UseGuards(AuthGuard)
 @Controller('habits')
 export class HabitsController {
   constructor(private readonly habitsService: HabitsService) {}
 
   @Get()
   async findAll(@Req() req) {
-    // req.user.userId берется из токена, который проверил AuthGuard
     const userId = req.user.userId;
     return this.habitsService.findAllByUser(userId);
   }
@@ -25,4 +33,13 @@ export class HabitsController {
     const userId = req.user.userId;
     return this.habitsService.create(createHabitDto.title, userId);
   }
+
+  // --- НАЧАЛО ИЗМЕНЕНИЙ ---
+  @Delete(':id') // Эндпоинт будет DELETE /habits/some-uuid
+  @HttpCode(HttpStatus.NO_CONTENT) // При успехе возвращаем статус 204 No Content
+  async remove(@Param('id') habitId: string, @Req() req) {
+    const userId = req.user.userId;
+    return this.habitsService.remove(habitId, userId);
+  }
+  // --- КОНЕЦ ИЗМЕНЕНИЙ ---
 }
