@@ -1,57 +1,58 @@
 "use client";
 
-import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { AddHabitForm } from "@/components/AddHabitForm";
 import { HabitList } from "@/components/HabitList";
+import { useHabits } from "@/hooks/useHabits";
 import TelegramLoginButton from "@/components/TelegramLoginButton";
+import styles from "./page.module.scss";
+
+const Dashboard = () => {
+  const { logout } = useAuth();
+  const { habits, isLoading, error, deleteHabit, toggleHabit, refetch } =
+    useHabits();
+
+  return (
+    <div>
+      <header className={styles.header}>
+        <h1>Wellnest Dashboard</h1>
+        <button onClick={logout} className={styles.logoutButton}>
+          Log Out
+        </button>
+      </header>
+      <p>Welcome! You are logged in.</p>
+
+      <AddHabitForm onHabitAdded={refetch} />
+
+      <HabitList
+        habits={habits}
+        isLoading={isLoading}
+        error={error}
+        onDelete={deleteHabit}
+        onToggle={toggleHabit}
+      />
+    </div>
+  );
+};
+
+const LoginPage = () => (
+  <div className={styles.loginWrapper}>
+    <h1>Welcome to Wellnest</h1>
+    <p>Please log in to continue</p>
+    <TelegramLoginButton />
+  </div>
+);
 
 export default function Home() {
-  const { token, isLoading, logout } = useAuth();
-
-  // Этот стейт нужен, чтобы "пнуть" HabitList и заставить его обновиться
-  const [habitListKey, setHabitListKey] = useState(0);
+  const { token, isLoading } = useAuth();
 
   if (isLoading) {
     return <div>Loading...</div>;
   }
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      {token ? (
-        // --- ЭКРАН АВТОРИЗОВАННОГО ПОЛЬЗОВАТЕЛЯ ---
-        <div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <h1>Wellnest Dashboard</h1>
-            <button onClick={logout}>Log Out</button>
-          </div>
-          <p>Welcome! You are logged in.</p>
-          <hr style={{ margin: "2rem 0" }} />
-
-          {/* Передаем функцию, которая изменит ключ и вызовет ре-рендер списка */}
-          <AddHabitForm
-            onHabitAdded={() => setHabitListKey((prevKey) => prevKey + 1)}
-          />
-
-          <div style={{ marginTop: "2rem" }}>
-            {/* Передаем ключ, чтобы React пересоздал компонент при его изменении */}
-            <HabitList key={habitListKey} />
-          </div>
-        </div>
-      ) : (
-        // --- ЭКРАН ВХОДА ---
-        <div style={{ textAlign: "center", paddingTop: "20vh" }}>
-          <h1>Welcome to Wellnest</h1>
-          <p>Please log in to continue</p>
-          <TelegramLoginButton />
-        </div>
-      )}
+    <main className={styles.pageWrapper}>
+      {token ? <Dashboard /> : <LoginPage />}
     </main>
   );
 }

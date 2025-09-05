@@ -1,9 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { useHabits, Habit } from "@/hooks/useHabits";
+import { Habit } from "@/hooks/useHabits";
 import { HabitStatsModal } from "./HabitStatsModal";
 import styles from "./HabitList.module.scss";
+
+interface HabitListProps {
+  habits: Habit[];
+  isLoading: boolean;
+  error: string;
+  onDelete: (habitId: string) => void;
+  onToggle: (habit: Habit) => void;
+}
 
 const HabitItem = ({
   habit,
@@ -16,6 +24,7 @@ const HabitItem = ({
   onDelete: (habitId: string) => void;
   onSelect: (habitId: string) => void;
 }) => (
+  // ... (JSX для HabitItem остается без изменений)
   <li className={styles.item}>
     <input
       type="checkbox"
@@ -44,8 +53,13 @@ const HabitItem = ({
   </li>
 );
 
-export const HabitList = () => {
-  const { habits, isLoading, error, deleteHabit, toggleHabit } = useHabits();
+export const HabitList = ({
+  habits,
+  isLoading,
+  error,
+  onDelete,
+  onToggle,
+}: HabitListProps) => {
   const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
 
   if (isLoading) return <p>Loading habits...</p>;
@@ -68,8 +82,8 @@ export const HabitList = () => {
             <HabitItem
               key={habit.id}
               habit={habit}
-              onToggle={toggleHabit}
-              onDelete={deleteHabit}
+              onToggle={onToggle}
+              onDelete={onDelete}
               onSelect={setSelectedHabitId}
             />
           ))}
