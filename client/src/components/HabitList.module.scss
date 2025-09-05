@@ -1,0 +1,44 @@
+.list {
+  list-style: none;
+  padding: 0;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  padding: 10px;
+  border: 1px solid #eee;
+  border-radius: 5px;
+}
+
+.checkbox {
+  margin-right: 15px;
+  transform: scale(1.5);
+  cursor: pointer;
+}
+
+.content {
+  cursor: pointer;
+  flex-grow: 1;
+
+  &.completed {
+    text-decoration: line-through;
+    color: gray;
+  }
+}
+
+.streak {
+  margin-left: 10px;
+  color: orange;
+  font-weight: bold;
+}
+
+.deleteButton {
+  color: red;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.2rem;
+}

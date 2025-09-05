@@ -1,3 +1,4 @@
+// api/src/habits/habits.controller.ts
 import {
   Body,
   Controller,
@@ -17,7 +18,7 @@ class CreateHabitDto {
   title: string;
 }
 
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard) // Защищаем все эндпоинты в этом контроллере
 @Controller('habits')
 export class HabitsController {
   constructor(private readonly habitsService: HabitsService) {}
@@ -27,6 +28,16 @@ export class HabitsController {
     const userId = req.user.userId;
     return this.habitsService.findAllByUser(userId);
   }
+
+  // --- НАЧАЛО ИЗМЕНЕНИЙ: НОВЫЙ ЭНДПОИНТ ДЛЯ СТАТИСТИКИ ---
+  // Важно: этот роут должен быть ДО роута @Delete(':id'),
+  // чтобы Nest не перепутал 'stats' с ':id'.
+  @Get(':id/stats')
+  async getStats(@Param('id') habitId: string, @Req() req) {
+    const userId = req.user.userId;
+    return this.habitsService.getStats(habitId, userId);
+  }
+  // --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
   @Post()
   async create(@Body() createHabitDto: CreateHabitDto, @Req() req) {
@@ -41,18 +52,16 @@ export class HabitsController {
     return this.habitsService.remove(habitId, userId);
   }
 
-  // --- НАЧАЛО ИЗМЕНЕНИЙ: НОВЫЕ ЭНДПОИНТЫ ---
-  @Post(':id/log') // POST /habits/some-uuid/log
+  @Post(':id/log')
   async logHabit(@Param('id') habitId: string, @Req() req) {
     const userId = req.user.userId;
     return this.habitsService.logHabit(habitId, userId);
   }
 
-  @Delete(':id/log') // DELETE /habits/some-uuid/log
+  @Delete(':id/log')
   @HttpCode(HttpStatus.NO_CONTENT)
   async unlogHabit(@Param('id') habitId: string, @Req() req) {
     const userId = req.user.userId;
     return this.habitsService.unlogHabit(habitId, userId);
   }
-  // --- КОНЕЦ ИЗМЕНЕНИЙ ---
 }

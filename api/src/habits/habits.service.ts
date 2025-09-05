@@ -4,43 +4,48 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { HabitEntity } from './habit.entity';
 import { HabitLogEntity } from './habit-log.entity';
+import { subDays, isSameDay } from 'date-fns';
 
 @Injectable()
 export class HabitsService {
   constructor(
     @InjectRepository(HabitEntity)
     private readonly habitRepository: Repository<HabitEntity>,
-    // --- НАЧАЛО ИЗМЕНЕНИЙ ---
     @InjectRepository(HabitLogEntity)
     private readonly habitLogRepository: Repository<HabitLogEntity>,
-    // --- КОНЕЦ ИЗМЕНЕНИЙ ---
   ) {}
 
   async findAllByUser(userId: string) {
-    // Убрали тип, т.к. будем добавлять поле
     const habits = await this.habitRepository.find({
       where: { user: { id: userId } },
       order: { createdAt: 'ASC' },
     });
 
-    // --- НАЧАЛО ИЗМЕНЕНИЙ ---
-    // Для каждой привычки проверяем, есть ли лог за СЕГОДНЯ
-    const today = new Date().toISOString().split('T')[0]; // Формат 'YYYY-MM-DD'
     const habitsWithStatus = await Promise.all(
       habits.map(async (habit) => {
-        const log = await this.habitLogRepository.findOne({
-          where: {
-            habit: { id: habit.id },
-            date: today,
-          },
+        const logs = await this.habitLogRepository.find({
+          where: { habit: { id: habit.id } },
+          order: { date: 'DESC' },
         });
-        return { ...habit, isCompletedToday: !!log }; // Добавляем поле isCompletedToday
+
+        const today = new Date();
+        const isCompletedToday =
+          logs.length > 0 && isSameDay(new Date(logs[0].date), today);
+
+        // --- ИЗМЕНЕНИЕ: Используем наш новый приватный метод ---
+        const streak = this.calculateStreak(logs);
+
+        return {
+          ...habit,
+          isCompletedToday,
+          streak,
+        };
       }),
     );
     return habitsWithStatus;
-    // --- КОНЕЦ ИЗМЕНЕНИЙ ---
   }
 
+  // ... (методы create, remove, logHabit, unlogHabit остаются без изменений) ...
   async create(title: string, userId: string): Promise<HabitEntity> {
     const newHabit = this.habitRepository.create({
       title,
@@ -59,12 +64,7 @@ export class HabitsService {
     }
   }
 
-  // --- НАЧАЛО ИЗМЕНЕНИЙ: НОВЫЕ МЕТОДЫ ---
-  /**
-   * Создает лог о выполнении привычки на сегодня.
-   */
   async logHabit(habitId: string, userId: string): Promise<HabitLogEntity> {
-    // Проверяем, существует ли такая привычка и принадлежит ли она пользователю
     const habit = await this.habitRepository.findOneBy({
       id: habitId,
       user: { id: userId },
@@ -74,30 +74,38 @@ export class HabitsService {
         `Habit with ID "${habitId}" not found for this user.`,
       );
     }
-
     const today = new Date().toISOString().split('T')[0];
-
-    // Проверяем, не создан ли уже лог на сегодня, чтобы избежать дублей
     const existingLog = await this.habitLogRepository.findOneBy({
       habit: { id: habitId },
       date: today,
     });
     if (existingLog) {
-      return existingLog; // Если уже есть, просто возвращаем его
+      return existingLog;
     }
-
     const newLog = this.habitLogRepository.create({ habit, date: today });
     return this.habitLogRepository.save(newLog);
   }
 
-  /**
-   * Удаляет лог о выполнении привычки за сегодня.
-   */
   async unlogHabit(habitId: string, userId: string): Promise<void> {
     const today = new Date().toISOString().split('T')[0];
-    // Мы не можем просто удалить лог по ID, т.к. мы его не знаем.
-    // Вместо этого мы находим привычку, убеждаемся, что она принадлежит пользователю,
-    // а затем удаляем лог, связанный с ней и сегодняшней датой.
+    const habit = await this.habitRepository.findOneBy({
+      id: habitId,
+      user: { id: userId },
+    });
+    if (!habit) {
+      throw new NotFoundException(
+        `Habit with ID "${habitId}" not found for this user.`,
+      );
+    }
+    await this.habitLogRepository.delete({
+      habit: { id: habitId },
+      date: today,
+    });
+  }
+
+  // --- НАЧАЛО ИЗМЕНЕНИЙ: НОВЫЙ МЕТОД ДЛЯ СТАТИСТИКИ ---
+  async getStats(habitId: string, userId: string) {
+    // 1. Убеждаемся, что привычка существует и принадлежит пользователю
     const habit = await this.habitRepository.findOneBy({
       id: habitId,
       user: { id: userId },
@@ -108,10 +116,64 @@ export class HabitsService {
       );
     }
 
-    await this.habitLogRepository.delete({
-      habit: { id: habitId },
-      date: today,
+    // 2. Получаем все логи для этой привычки
+    const logs = await this.habitLogRepository.find({
+      where: { habit: { id: habitId } },
+      order: { date: 'DESC' },
     });
+
+    // 3. Считаем статистику
+    const currentStreak = this.calculateStreak(logs);
+    const totalCompletions = logs.length;
+    // Просто возвращаем массив дат в формате 'YYYY-MM-DD' для отрисовки календаря
+    const completionHistory = logs.map((log) => log.date);
+
+    // TODO: В будущем здесь будет логика подсчета самого длинного стрика
+    const longestStreak = currentStreak; // Пока для простоты используем текущий
+
+    return {
+      habitTitle: habit.title,
+      totalCompletions,
+      currentStreak,
+      longestStreak,
+      completionHistory,
+    };
+  }
+  // --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
+  // --- НАЧАЛО ИЗМЕНЕНИЙ: Рефакторинг логики стрика в отдельный метод ---
+  private calculateStreak(logs: HabitLogEntity[]): number {
+    if (logs.length === 0) {
+      return 0;
+    }
+
+    const today = new Date();
+    const latestLogDate = new Date(logs[0].date);
+
+    // Если последняя запись не сегодня и не вчера, то стрик точно прерван.
+    if (
+      !isSameDay(latestLogDate, today) &&
+      !isSameDay(latestLogDate, subDays(today, 1))
+    ) {
+      return 0;
+    }
+
+    let currentStreak = 1;
+    // Проверяем остальные дни
+    for (let i = 1; i < logs.length; i++) {
+      const currentLogDate = new Date(logs[i - 1].date);
+      const previousLogDate = new Date(logs[i].date);
+      const expectedPreviousDate = subDays(currentLogDate, 1);
+
+      if (isSameDay(previousLogDate, expectedPreviousDate)) {
+        currentStreak++;
+      } else {
+        // Нашли "дырку" в последовательности, серия прервалась.
+        break;
+      }
+    }
+
+    return currentStreak;
   }
   // --- КОНЕЦ ИЗМЕНЕНИЙ ---
 }
